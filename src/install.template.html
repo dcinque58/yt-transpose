@@ -1,0 +1,257 @@
+<title>YT Transpose</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: una colonna stretta da leggere sul telefono; passi numerati perché sono davvero una sequenza. */
+:root {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --ink: #171a22;
+  --muted: #5b6273;
+  --line: #dde0e8;
+  --accent: #b86e00;
+  --accent-fill: #ffb020;
+  --on-accent: #1b1300;
+  --key-white: #ffffff;
+  --key-black: #22252c;
+  --ok: #17865a;
+  --warn-bg: #fff3dc;
+  --warn-ink: #6b4300;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", -apple-system, "Helvetica Neue", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111318; --surface: #1a1d24; --ink: #eef0f4; --muted: #a0a7b6; --line: #2c3039;
+    --accent: #ffb020; --accent-fill: #ffb020; --on-accent: #1b1300;
+    --key-white: #e8eaef; --key-black: #0b0c10; --ok: #3ecf8e; --warn-bg: #2f2410; --warn-ink: #ffd38a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111318; --surface: #1a1d24; --ink: #eef0f4; --muted: #a0a7b6; --line: #2c3039;
+  --accent: #ffb020; --accent-fill: #ffb020; --on-accent: #1b1300;
+  --key-white: #e8eaef; --key-black: #0b0c10; --ok: #3ecf8e; --warn-bg: #2f2410; --warn-ink: #ffd38a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 17px/1.55 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 64px;
+}
+.page { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+
+header { display: flex; flex-direction: column; gap: 14px; }
+.keys { display: flex; height: 44px; max-width: 100%; }
+.keys span { flex: 1; border: 1px solid var(--line); border-radius: 0 0 4px 4px; background: var(--key-white); margin-right: -1px; position: relative; }
+.keys span.b { background: var(--key-black); border-color: var(--key-black); flex: .7; height: 62%; margin: 0 -9px; z-index: 1; border-radius: 0 0 3px 3px; }
+.keys span.hot { background: var(--accent-fill); border-color: var(--accent-fill); }
+h1 { font: 800 clamp(2.3rem, 9vw, 3.4rem)/1 var(--f-display); letter-spacing: -.02em; margin: 6px 0 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 34em; }
+.lede strong { color: var(--ink); }
+
+h2 { font: 600 1.45rem/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+section { display: flex; flex-direction: column; gap: 14px; }
+.step-head { display: flex; align-items: baseline; gap: 12px; }
+.num { font: 600 .8rem/1 var(--f-mono); color: var(--accent); letter-spacing: .08em; flex: none; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+ol.how { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 10px; }
+ol.how li::marker { color: var(--accent); font-weight: 700; }
+b, strong { font-weight: 700; }
+.ui { font-weight: 700; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; white-space: nowrap; }
+
+.copybox { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+button.copy {
+  appearance: none; border: 0; cursor: pointer; font: 700 1.1rem/1 var(--f-body);
+  background: var(--accent-fill); color: var(--on-accent); border-radius: 12px; padding: 18px 20px; width: 100%;
+}
+button.copy:active { transform: translateY(1px); }
+button.copy:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.status { min-height: 1.4em; font-weight: 700; color: var(--ok); }
+.status.fail { color: var(--warn-ink); }
+textarea {
+  width: 100%; height: 88px; resize: vertical; font: 12px/1.4 var(--f-mono); color: var(--muted);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; word-break: break-all;
+}
+.meta { font: 13px/1.4 var(--f-mono); color: var(--muted); }
+
+.mock { display: flex; justify-content: flex-end; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.bar { display: inline-flex; align-items: center; gap: 2px; background: #16181d; border: 1px solid #3a3f4a; border-radius: 999px; padding: 4px; color: #f2f3f5; font: 600 18px/1 -apple-system, system-ui, sans-serif; }
+.bar span { min-width: 42px; height: 40px; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; }
+.bar .val { min-width: 64px; font-size: 16px; font-variant-numeric: tabular-nums; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #3ecf8e; display: inline-block; }
+dl.legend { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; }
+dl.legend dt { font: 600 .95rem/1.5 var(--f-mono); color: var(--accent); }
+dl.legend dd { margin: 0; min-width: 0; }
+
+.note { background: var(--warn-bg); color: var(--warn-ink); border-radius: 12px; padding: 14px 16px; }
+.checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.checklist li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; }
+.checklist li::before { content: ""; width: 18px; height: 18px; margin-top: 4px; border: 2px solid var(--accent); border-radius: 5px; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
+details + details { margin-top: -4px; }
+summary { cursor: pointer; font-weight: 700; padding: 14px 0; list-style-position: outside; }
+details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+details > div { padding-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line); padding-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+  <header>
+    <div class="keys" aria-hidden="true">
+      <span></span><span class="b"></span><span></span><span class="b"></span><span class="hot"></span><span></span><span class="b"></span><span></span><span class="b"></span><span></span><span class="b"></span><span></span>
+    </div>
+    <h1>YT Transpose</h1>
+    <p class="lede">Alza o abbassa la tonalità dei video YouTube, <strong>un semitono alla volta</strong>, mentre canti. Ricorda la tonalità di ogni brano e ti fa creare playlist. Si usa da iPhone dentro <strong>Brave</strong> (va bene anche Safari), senza installare app.</p>
+  </header>
+
+  <section aria-labelledby="s1">
+    <div class="step-head"><span class="num">PASSO 1</span><h2 id="s1">Copia il codice</h2></div>
+    <p class="muted">Apri questa pagina sull'iPhone e tocca il pulsante. Il codice è lungo una sola riga: non serve leggerlo.</p>
+    <div class="copybox">
+      <button class="copy" id="copy" type="button">Copia il codice</button>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <textarea id="code" readonly aria-label="Codice del preferito">{{BOOKMARKLET}}</textarea>
+      <div class="meta">versione {{VERSION}} · {{SIZE}} caratteri · inizia con <b>javascript:</b></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s2">
+    <div class="step-head"><span class="num">PASSO 2</span><h2 id="s2">Crea il preferito in Brave</h2></div>
+    <ol class="how">
+      <li>In Brave apri una pagina qualsiasi (va benissimo questa).</li>
+      <li>Tocca il menu <span class="ui">···</span> in basso e scegli <span class="ui">Aggiungi ai preferiti</span> (l'icona è un libro o una stella, dipende dalla versione).</li>
+      <li>Apri l'elenco dei <b>Preferiti</b> dallo stesso menu, tocca <span class="ui">Modifica</span> e poi il preferito appena creato.</li>
+      <li>Come nome scrivi <b>♪ Transpose</b>.</li>
+      <li>Nel campo dell'indirizzo cancella tutto, poi tieni premuto e scegli <span class="ui">Incolla</span>. Deve iniziare con <b>javascript:</b>.</li>
+      <li>Tocca <span class="ui">Salva</span> o <span class="ui">Fine</span>.</li>
+    </ol>
+    <p class="muted">Su Safari è lo stesso procedimento: Condividi → Aggiungi segnalibro, poi Segnalibri → Modifica.</p>
+  </section>
+
+  <section aria-labelledby="s3">
+    <div class="step-head"><span class="num">PASSO 3</span><h2 id="s3">Prepara Brave (una volta sola)</h2></div>
+    <ol class="how">
+      <li>In <b>Impostazioni di Brave</b> attiva l'audio in background (la voce si chiama <i>Audio in background</i> o <i>Enable Background Audio</i>, sotto le impostazioni multimediali o generali). Serve per ascoltare a schermo bloccato.</li>
+      <li>Su YouTube, nel player, disattiva la <b>riproduzione automatica</b>. Così YouTube non salta a un video suggerito mentre usi le tue playlist.</li>
+      <li>Se in Brave hai attivato <i>Blocca script</i>, lascia gli script attivi per youtube.com, altrimenti né YouTube né il preferito funzionano.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="s4">
+    <div class="step-head"><span class="num">PASSO 4</span><h2 id="s4">Usalo su un video</h2></div>
+    <ol class="how">
+      <li>Apri un video su <b>m.youtube.com</b> e fallo partire con l'audio.</li>
+      <li>Menu <span class="ui">···</span> → <b>Preferiti</b> → tocca <b>♪ Transpose</b>. In basso a destra compare questa barra:</li>
+    </ol>
+    <div class="mock" aria-label="Esempio della barra di controllo">
+      <div class="bar"><span>−</span><span class="val"><i class="dot"></i>+2</span><span>+</span><span>☰</span></div>
+    </div>
+    <dl class="legend">
+      <dt>− / +</dt><dd>Un semitono giù o su, da −12 a +12. La prima volta il tocco attiva anche l'audio.</dd>
+      <dt>+2</dt><dd>La trasposizione attuale. Il pallino verde vuol dire che l'audio passa dal trasposto; giallo o rosso segnala un problema e il pannello spiega quale.</dd>
+      <dt>☰</dt><dd>Apre il pannello: tasto <b>Originale (0)</b>, aggiunta alla playlist, riproduzione in ordine, brani memorizzati, backup.</dd>
+    </dl>
+    <p>Ogni volta che cambi tonalità a un video viene <b>ricordata</b>: quando lo riapri, dopo aver toccato il preferito, riparte nella tua tonalità. In una playlist ogni brano suona alla sua tonalità e alla fine passa da solo al successivo.</p>
+    <div class="note">Il preferito va toccato di nuovo ogni volta che la pagina di YouTube si ricarica da zero (apertura di Brave, ricarica, link esterno). Spostandoti tra i video dentro YouTube o dalla playlist resta attivo.</div>
+  </section>
+
+  <section aria-labelledby="s5">
+    <div class="step-head"><span class="num">PRIMO TEST</span><h2 id="s5">Tre minuti per verificare il tuo iPhone</h2></div>
+    <p class="muted">Il codice è collaudato sul sito mobile di YouTube; il comportamento esatto dipende da iPhone e browser. Prova questi punti al primo utilizzo: se uno non va, la sezione qui sotto aiuta a capire perché.</p>
+    <ul class="checklist">
+      <li><span>Con <b>+3</b> la voce sale chiaramente e il pallino è verde.</span></li>
+      <li><span>Il suono è pulito, senza scatti o crepitii, anche toccando lo schermo e scorrendo la pagina.</span></li>
+      <li><span>Bloccando lo schermo l'audio continua, ancora trasposto.</span></li>
+      <li><span>Aggiungi due video a una playlist, avviala, salta al secondo: parte con la sua tonalità e si sente.</span></li>
+      <li><span>Chiudi Brave, riapri lo stesso video e tocca il preferito: torna alla tonalità memorizzata.</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="s6">
+    <h2 id="s6">Se qualcosa non va</h2>
+    <div>
+      <details>
+        <summary>Tocco il preferito e non succede niente</summary>
+        <div>
+          <p>Controlla che l'indirizzo del preferito inizi con <b>javascript:</b> e sia stato incollato tutto (è molto lungo). Avvialo dall'elenco dei Preferiti, non scrivendone il nome nella barra degli indirizzi.</p>
+          <p>Se ancora non parte, prova lo stesso preferito in Safari: così capiamo se il limite è di Brave.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Il video si è ammutolito</summary>
+        <div>
+          <p>Tocca <b>+</b> o <b>−</b>: su iPhone l'audio si riattiva solo con un tocco. Se resta muto, ricarica la pagina; la tonalità memorizzata non si perde.</p>
+        </div>
+      </details>
+      <details>
+        <summary>A schermo bloccato la musica si ferma</summary>
+        <div>
+          <p>Verifica il passo 3 (audio in background). Se si ferma comunque, è un limite di iOS: il browser può sospendere l'elaborazione dell'audio quando la pagina non è in primo piano. Tieni lo schermo acceso con la luminosità al minimo.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Sento piccoli scatti</summary>
+        <div>
+          <p>Succede se l'iPhone è sotto sforzo mentre la pagina di YouTube è attiva. Chiudi le altre schede e riprova. Se capita spesso, apri una segnalazione nella repository indicando modello di iPhone e versione di iOS.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Non voglio perdere le mie playlist</summary>
+        <div>
+          <p>Tonalità e playlist restano sull'iPhone, dentro Brave. Cancellando i dati di navigazione di YouTube spariscono, e nelle schede private non vengono salvate.</p>
+          <p>Nel pannello tocca <b>Copia backup</b> e incolla il testo in una nota. Per recuperarlo: <b>Ripristina…</b>, incolla, conferma.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <footer>
+    <p>La trasposizione avviene sull'iPhone, nel browser: nessun dato viene inviato altrove.</p>
+    <p>Il cambio di tonalità mantiene la velocità del brano; l'audio arriva con circa un decimo di secondo di ritardo rispetto al video.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('copy');
+  var box = document.getElementById('code');
+  var status = document.getElementById('status');
+  function done(ok) {
+    status.className = 'status' + (ok ? '' : ' fail');
+    status.textContent = ok
+      ? 'Copiato. Ora passa al passo 2.'
+      : 'Copia automatica non riuscita: il testo qui sotto è selezionato, tieni premuto e scegli Copia.';
+  }
+  function selectAll() {
+    box.focus();
+    box.setSelectionRange(0, box.value.length);
+  }
+  btn.addEventListener('click', function () {
+    var text = box.value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () {
+        selectAll();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        done(ok);
+      });
+    } else {
+      selectAll();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      done(ok);
+    }
+  });
+})();
+</script>
