@@ -95,6 +95,7 @@ dl.legend dd { margin: 0; min-width: 0; }
 .checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .checklist li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; }
 .checklist li::before { content: ""; width: 18px; height: 18px; margin-top: 4px; border: 2px solid var(--accent); border-radius: 5px; }
+.checklist.plain li::before { width: 8px; height: 8px; margin: 9px 0 0 5px; border: 0; border-radius: 50%; background: var(--accent); }
 
 details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
 details + details { margin-top: -4px; }
@@ -166,13 +167,24 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
     <div class="note">Il preferito va toccato di nuovo ogni volta che la pagina di YouTube si ricarica da zero (apertura di Brave, ricarica, link esterno). Spostandoti tra i video dentro YouTube o dalla playlist resta attivo.</div>
   </section>
 
+  <section aria-labelledby="s4b">
+    <div class="step-head"><span class="num">SU IPHONE</span><h2 id="s4b">Come funziona la modalità iPhone</h2></div>
+    <p>Su iPhone il browser non lascia modificare l'audio di un video in streaming. Lo script allora prende l'audio mentre YouTube lo scarica, lo traspone e lo suona al posto dell'originale. In pratica:</p>
+    <ul class="checklist plain">
+      <li><span>Quando tocchi il preferito il video <b>riparte dallo stesso punto</b>: serve per agganciare l'audio fin dall'inizio.</span></li>
+      <li><span>L'icona del volume di YouTube risulta <b>muta</b>: è voluto, perché il suono che senti arriva dallo script. Non toccarla, altrimenti senti due audio sovrapposti.</span></li>
+      <li><span>Nei primi secondi, o dopo un salto nel video, puoi sentire per un attimo l'audio originale mentre lo script prepara quello trasposto.</span></li>
+      <li><span>Tieni lo <b>schermo acceso</b>: a schermo bloccato iPhone mette in pausa il video e con lui l'audio.</span></li>
+    </ul>
+  </section>
+
   <section aria-labelledby="s5">
     <div class="step-head"><span class="num">PRIMO TEST</span><h2 id="s5">Tre minuti per verificare il tuo iPhone</h2></div>
     <p class="muted">Il codice è collaudato sul sito mobile di YouTube; il comportamento esatto dipende da iPhone e browser. Prova questi punti al primo utilizzo: se uno non va, la sezione qui sotto aiuta a capire perché.</p>
     <ul class="checklist">
       <li><span>Con <b>+3</b> la voce sale chiaramente e il pallino è verde.</span></li>
       <li><span>Il suono è pulito, senza scatti o crepitii, anche toccando lo schermo e scorrendo la pagina.</span></li>
-      <li><span>Bloccando lo schermo l'audio continua, ancora trasposto.</span></li>
+      <li><span>Spostandoti avanti nel video, dopo un istante l'audio torna trasposto.</span></li>
       <li><span>Aggiungi due video a una playlist, avviala, salta al secondo: parte con la sua tonalità e si sente.</span></li>
       <li><span>Chiudi Brave, riapri lo stesso video e tocca il preferito: torna alla tonalità memorizzata.</span></li>
     </ul>
@@ -189,15 +201,23 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
         </div>
       </details>
       <details>
-        <summary>Il video si è ammutolito</summary>
+        <summary>Non sento niente</summary>
         <div>
-          <p>Tocca <b>+</b> o <b>−</b>: su iPhone l'audio si riattiva solo con un tocco. Se resta muto, ricarica la pagina; la tonalità memorizzata non si perde.</p>
+          <p>Tocca <b>+</b> o <b>−</b>: su iPhone l'audio dello script si attiva solo con un tocco. Controlla anche che l'interruttore laterale del silenzioso e il volume siano a posto.</p>
+          <p>Se resta muto, apri ☰ e leggi il messaggio accanto a "YT Transpose". In ogni caso puoi ricaricare la pagina e ritoccare il preferito: la tonalità memorizzata non si perde.</p>
         </div>
       </details>
       <details>
         <summary>A schermo bloccato la musica si ferma</summary>
         <div>
-          <p>Verifica il passo 3 (audio in background). Se si ferma comunque, è un limite di iOS: il browser può sospendere l'elaborazione dell'audio quando la pagina non è in primo piano. Tieni lo schermo acceso con la luminosità al minimo.</p>
+          <p>È atteso nella modalità iPhone: lo script ha bisogno che il video continui a scorrere, e a schermo bloccato iPhone lo mette in pausa. Tieni lo schermo acceso, magari con la luminosità al minimo; in Impostazioni → Schermo e luminosità → Blocco automatico puoi allungare il tempo prima che si spenga.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Sento due audio sovrapposti, o la voce non cambia</summary>
+        <div>
+          <p>Hai probabilmente tolto il muto dal video di YouTube: rimettilo, oppure ricarica la pagina e ritocca il preferito.</p>
+          <p>Se il pannello dice «Formato audio non gestito», per quel video YouTube usa un formato che lo script non sa leggere: la tonalità resta quella originale.</p>
         </div>
       </details>
       <details>
@@ -218,7 +238,7 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
 
   <footer>
     <p>La trasposizione avviene sull'iPhone, nel browser: nessun dato viene inviato altrove.</p>
-    <p>Il cambio di tonalità mantiene la velocità del brano; l'audio arriva con circa un decimo di secondo di ritardo rispetto al video.</p>
+    <p>Il cambio di tonalità mantiene la velocità del brano. Su iPhone l'audio trasposto segue il video con una tolleranza di pochi centesimi di secondo.</p>
   </footer>
 </div>
 

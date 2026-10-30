@@ -5,10 +5,10 @@ const path = require('path');
 const { minify } = require('terser');
 
 (async () => {
-  const core = fs.readFileSync(path.join(__dirname, 'src/pitchcore.js'), 'utf8')
-    .replace(/\nif \(typeof module[^\n]*\n?/, '\n');
+  const strip = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8').replace(/\nif \(typeof module[^\n]*\n?/, '\n');
+  const core = strip('src/pitchcore.js') + '\n' + strip('src/capture.js');
   const main = fs.readFileSync(path.join(__dirname, 'src/main.js'), 'utf8');
-  // main.js è già una IIFE: ci mettiamo dentro PitchCore come funzione locale.
+  // main.js è già una IIFE: ci mettiamo dentro PitchCore e CaptureStream come funzioni locali.
   const marker = "  'use strict';\n";
   if (!main.includes(marker)) throw new Error('marker non trovato in main.js');
   const full = main.replace(marker, marker + core.split('\n').map(l => '  ' + l).join('\n') + '\n');

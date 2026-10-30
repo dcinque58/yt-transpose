@@ -5,7 +5,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.1.0';
+  var VERSION = '2.0.0';
   var NS = '__ytTranspose';
 
   if (window[NS]) { window[NS].toggle(); return; }
@@ -132,6 +132,20 @@
   var starting = null;
   var silentTicks = 0, lastTime = -1, stuckTicks = 0, warn = '';
 
+  // Modalità iPhone: WebKit non passa a Web Audio l'audio dei video in streaming,
+  // quindi catturiamo i pezzi audio che YouTube consegna al lettore (capture.js),
+  // li suoniamo noi trasposti e teniamo muto il video. Su computer si usa invece
+  // l'aggancio diretto al <video>, più semplice.
+  var CAPTURE = !!window[NS + 'ForceCapture'] || (!!window.ManagedMediaSource && !window.MediaSource);
+  var cap = null, capHealthyAt = 0, capSickTicks = 0, mutedByUs = false, capNote = '';
+  if (CAPTURE) {
+    cap = CaptureStream(function (type, data) {
+      if (type === 'unsupported') { capNote = 'Formato audio non gestito (' + data + '): per questo video la tonalità resta quella originale.'; dirty = true; }
+      if (type === 'track') { capNote = ''; dirty = true; }
+    });
+    cap.install();
+  }
+
   function withTimeout(p, ms) {
     return new Promise(function (res, rej) {
       var t = setTimeout(function () { rej(new Error('timeout')); }, ms);
@@ -176,6 +190,45 @@
     return { kind: 'script', input: sp, output: sp, set: function (st) { core.setSemitones(st); } };
   }
 
+  // Motore della modalità iPhone: legge l'audio catturato alla posizione del
+  // video (con un piccolo anticipo che compensa il ritardo d'uscita), corregge
+  // la deriva con variazioni minime di velocità e passa tutto al PitchCore.
+  function captureEngine() {
+    var N = 4096;
+    var sp = ctx.createScriptProcessor(N, 1, 2);
+    var core = PitchCore(ctx.sampleRate);
+    var sr = ctx.sampleRate;
+    var tmpL = new Float32Array(N), tmpR = new Float32Array(N);
+    var pos = null, fade = 0;
+    // ScriptProcessor su alcuni WebKit gira solo se ha un ingresso collegato
+    var feed = ctx.createBufferSource();
+    feed.buffer = ctx.createBuffer(1, 128, sr); feed.loop = true;
+    feed.connect(sp); feed.start();
+    function lead() { return N / sr + (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + 0.02; }
+    sp.onaudioprocess = function (e) {
+      var ob = e.outputBuffer, oL = ob.getChannelData(0), oR = ob.getChannelData(1);
+      var v = curEl, i;
+      var playing = v && !v.paused && !v.seeking && !v.ended && v.readyState >= 2;
+      if (!playing) {
+        pos = null;
+        for (i = 0; i < N; i++) { tmpL[i] = 0; tmpR[i] = 0; }
+      } else {
+        var target = v.currentTime + lead();
+        if (pos === null || Math.abs(target - pos) > 0.25) { pos = target; fade = 0; }
+        var drift = target - pos;
+        var rate = (v.playbackRate || 1) * (1 + Math.max(-0.02, Math.min(0.02, drift * 0.5)));
+        var inc = rate / sr;
+        cap.read(pos, inc, tmpL, tmpR, N);
+        pos += inc * N;
+        if (fade < 512) { for (i = 0; i < N && fade < 512; i++, fade++) { var g = fade / 512; tmpL[i] *= g; tmpR[i] *= g; } }
+        // il video originale deve restare muto mentre suona il nostro audio
+        if (ctx.state === 'running' && cap.has(v.currentTime + 0.05) && !v.muted) { v.muted = true; mutedByUs = true; }
+      }
+      core.process([tmpL, tmpR], [oL, oR]);
+    };
+    return { kind: 'capture', input: null, output: sp, set: function (st) { core.setSemitones(st); } };
+  }
+
   // Va chiamata dentro un tocco dell'utente: iOS sblocca l'audio solo così.
   // Il grafo si costruisce anche a contesto sospeso; il <video> viene
   // agganciato solo quando il contesto gira davvero (vedi attach).
@@ -187,6 +240,24 @@
     try { ctx = new AC({ latencyHint: 'playback' }); } catch (e) { ctx = new AC(); }
     ctx.onstatechange = function () { attach(); refresh(); };
     resumeIfNeeded(); // subito, finché siamo dentro il gesto
+    if (CAPTURE) {
+      cap.setContext(ctx);
+      starting = Promise.resolve().then(function () {
+        engine = captureEngine(); engineKind = engine.kind;
+        master = ctx.createGain(); master.gain.value = window[NS + 'Mute'] ? 0 : 1; // usato solo nei test
+        engine.output.connect(master); master.connect(ctx.destination);
+        outMeter = ctx.createAnalyser(); outMeter.fftSize = 2048;
+        engine.output.connect(outMeter);
+        engine.set(semis);
+        attach(); refresh();
+        return true;
+      }).catch(function (e) {
+        audioErr = 'Avvio audio non riuscito: ' + (e && e.message || e);
+        refresh();
+        return false;
+      });
+      return starting;
+    }
     starting = createEngine().then(function (eng) {
       engine = eng; engineKind = eng.kind;
       dry = ctx.createGain(); wet = ctx.createGain();
@@ -226,6 +297,16 @@
   // Collega il <video> al nostro grafo, solo quando l'audio è attivo:
   // agganciarlo a un contesto sospeso lo renderebbe muto.
   function attach() {
+    if (CAPTURE) {
+      var cv = getVideo();
+      if (cv && cv !== curEl) {
+        cv.addEventListener('ended', onEnded);
+        cv.addEventListener('play', resumeIfNeeded);
+        cv.addEventListener('playing', resumeIfNeeded);
+        curEl = cv; stuckTicks = 0;
+      }
+      return;
+    }
     if (!engine || !ctx || ctx.state !== 'running') return;
     var v = getVideo();
     if (!v || v === curEl) return;
@@ -246,8 +327,8 @@
   function applySemis(st, opts) {
     st = Math.max(-12, Math.min(12, Math.round(st)));
     semis = st;
-    if (engine) {
-      engine.set(st);
+    if (engine) engine.set(st);
+    if (engine && dry) {
       var t = ctx.currentTime;
       dry.gain.setTargetAtTime(st === 0 ? 1 : 0, t, 0.015);
       wet.gain.setTargetAtTime(st === 0 ? 0 : 1, t, 0.015);
@@ -321,7 +402,7 @@
         p.loadVideoById(id);
         // Senza un tocco dell'utente YouTube fa partire il video successivo muto:
         // se prima si sentiva, togliamo il muto e ci assicuriamo che suoni.
-        if (wantSound) keepSound(p, 12);
+        if (wantSound || CAPTURE) keepSound(p, 12);
         setTimeout(function () {
           var c = currentVideo();
           if (play && (!c || c.id !== id)) navigateTo(id);
@@ -336,8 +417,10 @@
     setTimeout(function () {
       try {
         var v = getVideo();
-        if (p.isMuted && p.isMuted()) p.unMute();
-        if (v && v.muted) v.muted = false;
+        if (!CAPTURE) {
+          if (p.isMuted && p.isMuted()) p.unMute();
+          if (v && v.muted) v.muted = false;
+        }
         if (v && v.paused && p.playVideo) p.playVideo();
         resumeIfNeeded();
       } catch (e) { /* riprova al giro dopo */ }
@@ -405,8 +488,26 @@
     attach();
     if (play) setMediaSession();
     if (curEl && play && curEl.ended && Date.now() - play.at > 5000) onEnded();
-    checkSilence();
+    if (CAPTURE) checkCapture(); else checkSilence();
     refresh();
+  }
+
+  // Modalità iPhone: se l'audio trasposto non è pronto (inizio, ricerca nel video,
+  // errore), ridà voce al video originale invece di lasciare silenzio.
+  function checkCapture() {
+    var v = curEl;
+    if (!v) return;
+    cap.evict(v.currentTime);
+    var playing = !v.paused && !v.ended;
+    var ready = !!(ctx && ctx.state === 'running' && cap.has(v.currentTime + 0.05));
+    if (ready) { capSickTicks = 0; capHealthyAt = Date.now(); }
+    else if (playing) capSickTicks++;
+    if (!ready && playing && capSickTicks >= 3 && mutedByUs && v.muted) { v.muted = false; mutedByUs = false; }
+    var w = '';
+    if (capNote) w = capNote;
+    else if (playing && !cap.hasTrack()) w = 'Audio di YouTube non ancora agganciato: tocca il preferito su un video appena aperto, oppure ricarica la pagina.';
+    else if (playing && capSickTicks >= 3 && ctx && ctx.state === 'running') w = 'Preparo l\'audio trasposto… Intanto senti l\'audio originale.';
+    if (w !== warn) { warn = w; dirty = true; }
   }
 
   // Diagnostica: se il video avanza ma dal grafo non arriva suono, avvisa.
@@ -541,6 +642,7 @@
     if (!ctx) return 'Tocca − o + per attivare l\'audio.';
     if (ctx.state !== 'running') return 'Audio in pausa: tocca un pulsante per riattivarlo.';
     if (!curEl) return 'In attesa del video…';
+    if (CAPTURE) return cap.has(curEl.currentTime + 0.05) ? 'Attivo · modalità iPhone' : 'Modalità iPhone · in attesa dell\'audio';
     return 'Attivo';
   }
 
@@ -774,8 +876,9 @@
         for (var i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i]));
         return m;
       }
-      return { store: store.mode + (store.reason ? ':' + store.reason : ''), ctx: ctx && ctx.state, engine: engineKind, semis: semis, cur: cur, play: play, warn: warn, err: audioErr, attached: !!curEl, inLevel: peak(analyser), outLevel: peak(outMeter), db: db };
+      return { capture: cap ? cap.stats() : null, ahead: cap && curEl ? +cap.bufferedAhead(curEl.currentTime).toFixed(2) : null, mutedByUs: mutedByUs, store: store.mode + (store.reason ? ':' + store.reason : ''), ctx: ctx && ctx.state, engine: engineKind, semis: semis, cur: cur, play: play, warn: warn, err: audioErr, attached: !!curEl, inLevel: peak(analyser), outLevel: peak(outMeter), db: db };
     },
+    _cap: cap,
     _act: { change: changeSemis, playAt: playAt, next: nextTrack, add: addCurrent }
   };
 
@@ -785,6 +888,16 @@
   if (cur && db.songs[cur.id]) semis = db.songs[cur.id].s;
   refresh();
   startAudio(); // funziona se il tocco sul preferito conta come gesto; altrimenti basta toccare un pulsante
+  if (CAPTURE) {
+    // Il flusso audio è già partito prima dell'aggancio: ricarichiamo lo stesso video
+    // dallo stesso punto, così YouTube rimanda anche l'intestazione che serve a decodificarlo.
+    (function () {
+      var p = player(), v = getVideo(), c = currentVideo();
+      if (p && typeof p.loadVideoById === 'function' && c) {
+        try { p.loadVideoById(c.id, v ? v.currentTime : 0); keepSound(p, 8); } catch (e) { /* ignora */ }
+      }
+    })();
+  }
   setInterval(tick, 1000);
 
   // Dopo il primo disegno: recupera l'eventuale copia più recente da IndexedDB,

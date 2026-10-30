@@ -1,6 +1,6 @@
 {
   "name": "yt-transpose",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Trasposizione a semitoni dei video YouTube su iPhone (bookmarklet)",
   "directories": {
     "test": "test"
@@ -8,7 +8,8 @@
   "scripts": {
     "build": "node build.js",
     "test": "node test/quality-test.js test/out && python3 test/quality.py test/out",
-    "test:storage": "node test/storage-test.js"
+    "test:storage": "node test/storage-test.js",
+    "test:capture": "node test/capture-test.js"
   },
   "keywords": [],
   "author": "",
