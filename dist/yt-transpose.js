@@ -117,7 +117,7 @@
   }
   
   
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var NS = '__ytTranspose';
 
   if (window[NS]) { window[NS].toggle(); return; }
@@ -127,25 +127,107 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Archivio (localStorage di youtube.com, solo su questo dispositivo)  */
+  /* Archivio, solo su questo dispositivo.                               */
+  /* Primo posto: localStorage di youtube.com. Siccome YouTube lo riempie */
+  /* spesso fino al limite (circa 5 MB su iPhone), ogni salvataggio va   */
+  /* anche in IndexedDB, che ha uno spazio separato e molto più grande.  */
+  /* All'avvio vince la copia più recente delle due.                     */
   /* ------------------------------------------------------------------ */
   var KEY = 'ytTranspose.v1';
   function emptyDb() {
-    return { v: 1, songs: {}, playlists: [{ id: 'p' + Date.now().toString(36), name: 'La mia playlist', items: [] }], cur: null, loop: false, pos: 'bottom', pending: null };
+    return { v: 1, ts: 0, songs: {}, playlists: [{ id: 'p' + Date.now().toString(36), name: 'La mia playlist', items: [] }], cur: null, loop: false, pos: 'bottom', pending: null };
+  }
+  function validDb(d) { return !!(d && d.v === 1 && d.songs && Array.isArray(d.playlists)); }
+  function fixDb(d) {
+    if (!d.playlists.length) d.playlists = emptyDb().playlists;
+    if (!d.cur || !d.playlists.some(function (p) { return p.id === d.cur; })) d.cur = d.playlists[0].id;
+    return d;
   }
   function loadDb() {
     try {
       var d = JSON.parse(localStorage.getItem(KEY));
-      if (d && d.v === 1 && d.songs && Array.isArray(d.playlists)) return d;
-    } catch (e) { /* archivio assente o illeggibile */ }
+      if (validDb(d)) return d;
+    } catch (e) { /* archivio assente, illeggibile o bloccato */ }
     return emptyDb();
   }
-  var db = loadDb();
-  if (!db.playlists.length) db.playlists = emptyDb().playlists;
-  if (!db.cur || !plById(db.cur)) db.cur = db.playlists[0].id;
+  var db = fixDb(loadDb());
+
+  // store.mode: 'local' (tutto ok) · 'idb' (localStorage rifiuta, IndexedDB funziona) · 'none' (niente si salva)
+  var store = { mode: 'local', reason: '' };
+  var idbConn = null;
+  function idbOpen() {
+    if (idbConn) return idbConn;
+    idbConn = new Promise(function (res, rej) {
+      if (!window.indexedDB) { rej(new Error('IndexedDB non disponibile')); return; }
+      var r;
+      try { r = indexedDB.open('ytTranspose', 1); } catch (e) { rej(e); return; }
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error || new Error('apertura non riuscita')); };
+      r.onblocked = function () { rej(new Error('database bloccato')); };
+    });
+    idbConn.catch(function () { idbConn = null; });
+    return idbConn;
+  }
+  function idbGet() {
+    return idbOpen().then(function (d) {
+      return new Promise(function (res, rej) {
+        var q = d.transaction('kv', 'readonly').objectStore('kv').get('db');
+        q.onsuccess = function () { res(q.result || null); };
+        q.onerror = function () { rej(q.error); };
+      });
+    });
+  }
+  function idbPut(txt) {
+    return idbOpen().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(txt, 'db');
+        tx.oncomplete = function () { res(); };
+        tx.onerror = function () { rej(tx.error); };
+        tx.onabort = function () { rej(tx.error || new Error('scrittura annullata')); };
+      });
+    });
+  }
+  function reasonOf(e) {
+    var n = e && e.name;
+    if (n === 'QuotaExceededError' || n === 'NS_ERROR_DOM_QUOTA_REACHED') return 'quota';
+    if (n === 'SecurityError') return 'blocked';
+    return 'other';
+  }
+  function setStore(mode, err) {
+    var reason = err ? reasonOf(err) : '';
+    if (mode === store.mode && reason === store.reason) return;
+    var wasNone = store.mode === 'none';
+    store.mode = mode; store.reason = reason;
+    if (mode === 'none' && !wasNone && typeof toast === 'function') {
+      toast(reason === 'blocked'
+        ? 'Brave blocca il salvataggio per YouTube: le tonalità non verranno ricordate. Apri ☰ per la soluzione.'
+        : 'Il browser non riesce a salvare: le tonalità non verranno ricordate. Apri ☰ per la soluzione.');
+    }
+    dirty = true;
+    try { refresh(); } catch (e) { /* interfaccia non ancora pronta */ }
+  }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(db)); }
-    catch (e) { toast('Impossibile salvare: memoria del browser piena o bloccata'); }
+    db.ts = Date.now();
+    var txt = JSON.stringify(db), lsErr = null;
+    try { localStorage.setItem(KEY, txt); } catch (e) { lsErr = e; }
+    if (!lsErr) setStore('local');
+    idbPut(txt).then(function () {
+      if (lsErr) setStore('idb', lsErr);
+    }, function (e2) {
+      if (lsErr) setStore('none', reasonOf(lsErr) === 'blocked' ? lsErr : e2);
+    });
+  }
+  // Recupera la copia in IndexedDB se è più recente di quella in localStorage.
+  function loadFromIdb() {
+    return idbGet().then(function (txt) {
+      if (!txt) return false;
+      var d = JSON.parse(txt);
+      if (!validDb(d) || (d.ts || 0) <= (db.ts || 0)) return false;
+      db = fixDb(d);
+      return true;
+    }).catch(function () { return false; });
   }
   function plById(id) { for (var i = 0; i < db.playlists.length; i++) if (db.playlists[i].id === id) return db.playlists[i]; return null; }
   function curPl() { return plById(db.cur) || db.playlists[0]; }
@@ -659,8 +741,20 @@
         h('textarea', { id: 'bk', placeholder: '{"v":1,…}' }),
         h('button', { class: 'acc mt8', text: 'Ripristina dal testo', onclick: act(importBackup) })
       ) : null,
+      storeNotice(),
       h('div', { class: 'mut mt14', text: 'v' + VERSION + ' · i dati restano su questo iPhone, in questo browser.' })
     );
+  }
+
+  function storeNotice() {
+    if (store.mode === 'local') return h('div', { class: 'mut mt8', text: 'Salvataggio attivo.' });
+    if (store.mode === 'idb') return h('div', { class: 'mut mt8', text: 'Salvataggio attivo nel database del browser (la memoria normale di YouTube è piena: va bene così).' });
+    return h('div', { class: 'warn' },
+      h('b', { text: 'Le tonalità e le playlist non si salvano.' }), ' ',
+      store.reason === 'blocked'
+        ? 'Brave blocca i dati dei siti per YouTube. Su YouTube tocca l\'icona del leone di Brave e consenti i cookie (o abbassa gli Shields) per youtube.com; controlla anche che in Impostazioni → Shields e privacy non sia attivo «Blocca tutti i cookie». Poi ricarica la pagina e tocca di nuovo il preferito.'
+        : 'Lo spazio del browser per YouTube è pieno. Nelle impostazioni di Brave cancella i dati di navigazione (cookie e dati dei siti), poi riapri YouTube e tocca di nuovo il preferito.',
+      ' Intanto, prima di chiudere, usa «Copia backup».');
   }
 
   var lastBarKey = '';
@@ -792,7 +886,7 @@
         for (var i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i]));
         return m;
       }
-      return { ctx: ctx && ctx.state, engine: engineKind, semis: semis, cur: cur, play: play, warn: warn, err: audioErr, attached: !!curEl, inLevel: peak(analyser), outLevel: peak(outMeter), db: db };
+      return { store: store.mode + (store.reason ? ':' + store.reason : ''), ctx: ctx && ctx.state, engine: engineKind, semis: semis, cur: cur, play: play, warn: warn, err: audioErr, attached: !!curEl, inLevel: peak(analyser), outLevel: peak(outMeter), db: db };
     },
     _act: { change: changeSemis, playAt: playAt, next: nextTrack, add: addCurrent }
   };
@@ -801,13 +895,23 @@
 
   cur = currentVideo();
   if (cur && db.songs[cur.id]) semis = db.songs[cur.id].s;
-  if (db.pending && cur && db.pending.id === cur.id && Date.now() - db.pending.ts < 10 * 60 * 1000 && plById(db.pending.pid)) {
-    play = { pid: db.pending.pid, i: db.pending.i, at: Date.now(), retried: true };
-    toast('Playlist ripresa');
-  }
-  if (db.pending) { db.pending = null; save(); }
   refresh();
   startAudio(); // funziona se il tocco sul preferito conta come gesto; altrimenti basta toccare un pulsante
   setInterval(tick, 1000);
-  if (semis !== 0) toast('Tonalità memorizzata per questo video: ' + fmt(semis));
+
+  // Dopo il primo disegno: recupera l'eventuale copia più recente da IndexedDB,
+  // riprende una playlist interrotta da un ricaricamento, poi verifica che il salvataggio funzioni.
+  loadFromIdb().then(function (replaced) {
+    if (replaced && cur) applySemis(db.songs[cur.id] ? db.songs[cur.id].s : 0, { save: false });
+    if (db.pending && cur && db.pending.id === cur.id && Date.now() - db.pending.ts < 10 * 60 * 1000 && plById(db.pending.pid)) {
+      play = { pid: db.pending.pid, i: db.pending.i, at: Date.now(), retried: true };
+      setMediaSession();
+      toast('Playlist ripresa');
+    } else if (semis !== 0) {
+      toast('Tonalità memorizzata per questo video: ' + fmt(semis));
+    }
+    db.pending = null;
+    save(); // fa anche da prova: se il browser rifiuta, il pannello lo spiega
+    dirty = true; refresh();
+  });
 })();
